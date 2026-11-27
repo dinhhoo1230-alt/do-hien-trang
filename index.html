@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6fa">
+  <title>Đo Hiện Trạng – Vẽ mặt bằng và dựng 3D</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="geometry.js"></script>
+  <script defer src="viewport.js"></script>
+  <script defer src="orientation.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-symbol" aria-hidden="true">⟁</span><span>Đo Hiện Trạng</span></div>
+    <div class="top-actions">
+      <span class="save-status" id="save-status" role="status">Lưu trên máy này</span>
+      <button class="button" id="device-button"><span class="device-dot" id="device-dot" aria-hidden="true"></span>Thiết bị đo</button>
+      <button class="button primary" id="export"><span aria-hidden="true">↓</span> Xuất SketchUp</button>
+    </div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar" aria-labelledby="spaces-title">
+      <div class="project">
+        <label for="project-name">Công trình</label>
+        <input class="project-name" id="project-name" maxlength="80" aria-label="Tên công trình">
+      </div>
+      <div class="spaces-heading">
+        <h2 id="spaces-title">Không gian <span id="room-count"></span></h2>
+        <button class="icon-button" id="add-room" title="Thêm không gian" aria-label="Thêm không gian">+</button>
+      </div>
+      <div id="room-list" class="room-list"></div>
+      <div class="sidebar-bottom">
+        <button id="backup" class="text-button">↓ &nbsp; Lưu dự phòng</button>
+        <button id="restore" class="text-button">↑ &nbsp; Mở bản dự phòng</button>
+        <input type="file" id="restore-file" accept=".json,application/json" hidden>
+      </div>
+    </aside>
+    <main class="workspace">
+      <div class="workspace-heading">
+        <div class="heading-copy">
+          <div class="breadcrumb">Công trình <span aria-hidden="true">/</span> <span id="room-breadcrumb">Không gian</span></div>
+          <div class="room-heading">
+            <h1 id="room-title">Không gian</h1>
+            <span class="demo-label" id="demo-label" hidden>Dữ liệu mẫu</span>
+          </div>
+        </div>
+        <div class="view-actions">
+          <div class="view-tabs" role="group" aria-label="Chế độ xem mô hình">
+            <button id="view-plan" aria-pressed="false">Mặt bằng</button>
+            <button id="view-3d" aria-pressed="true">Mô hình 3D</button>
+          </div>
+          <button class="button" id="heading-tool" aria-controls="heading-panel" aria-expanded="false">↗ Đo hướng</button>
+        </div>
+      </div>
+      <div class="workspace-panels">
+        <section class="preview card" aria-label="Xem trước mô hình">
+          <section class="heading-panel" id="heading-panel" aria-label="Đo hướng bằng điện thoại" hidden>
+            <div id="heading-rectangle" hidden>
+              <p>Mỗi tường cần một ô hướng riêng. Chuyển phòng sang đường bao nhiều cạnh để đo.</p>
+              <button class="button primary" id="heading-convert">Dùng đường bao nhiều cạnh</button>
+            </div>
+            <div id="heading-controls" hidden>
+              <div class="heading-inputs">
+                <label>Cạnh cần đo<select id="heading-edge"></select></label>
+                <div class="heading-reading"><span>Mũi tên trên mặt bằng</span><strong id="heading-value">—</strong></div>
+              </div>
+              <p id="heading-status" role="status"></p>
+              <div class="heading-buttons">
+                <button class="button primary" id="heading-capture" disabled>Chốt hướng mốc</button>
+                <button class="button" id="heading-sensor">Bật cảm biến</button>
+                <button class="text-button" id="heading-simulate" aria-pressed="false">Mô phỏng</button>
+              </div>
+              <label id="heading-simulator" hidden>Góc xoay mô phỏng<input id="heading-dial" type="range" min="0" max="359" step="1" value="0"></label>
+            </div>
+          </section>
+          <div class="preview-stage" id="preview-stage">
+            <canvas id="viewport" role="img" aria-label="Bản xem trước hình học của không gian"></canvas>
+            <div class="view-controls" aria-label="Điều khiển bản xem trước">
+              <button id="zoom-in" class="icon-button" aria-label="Phóng to" title="Phóng to">+</button>
+              <button id="zoom-out" class="icon-button" aria-label="Thu nhỏ" title="Thu nhỏ">−</button>
+              <button id="fit" class="icon-button" aria-label="Về góc nhìn ban đầu" title="Về góc nhìn ban đầu">⌖</button>
+            </div>
+            <div class="stage-bottom">
+              <div class="view-hint" id="view-hint">Kéo để xoay · Cuộn để thu phóng</div>
+              <label class="cut-control" id="cut-control"><input type="checkbox" id="cut-walls" checked> Cắt tường khi xem</label>
+            </div>
+          </div>
+          <p id="model-error" class="model-error" role="status" hidden></p>
+          <p id="view-legend" class="view-legend">Kích thước thông thủy · Đơn vị mm</p>
+          <div class="stats" aria-label="Thông số không gian">
+            <div><span>Diện tích sàn</span><strong id="area">—</strong></div>
+            <div><span>Chu vi trong</span><strong id="perimeter">—</strong></div>
+            <div><span>Chiều cao</span><strong id="height-stat">—</strong></div>
+          </div>
+        </section>
+        <section class="measure card" aria-labelledby="measure-title">
+          <div class="measure-head">
+            <div><h2 id="measure-title">Thông số đo</h2><p>Kích thước lọt lòng và cao độ.</p></div>
+            <span class="unit-tag">mm</span>
+          </div>
+          <div class="measure-content" id="measure-content"></div>
+        </section>
+      </div>
+      <footer class="workspace-footer"><span id="footer-status">Dựng hình từ số đo thực tế</span><button class="text-button" id="help">Cách sử dụng</button></footer>
+    </main>
+  </div>
+  <dialog id="device-dialog">
+    <div class="dialog-head"><h2>Thiết bị đo</h2><button class="icon-button" data-close aria-label="Đóng">×</button></div>
+    <div class="dialog-body">
+      <div class="device-note"><strong>Máy đo góc Delixi</strong><p>Nhập độ nghiêng đọc trên máy. Đo chiều dài bằng thước dây hoặc thước laser đo khoảng cách.</p></div>
+      <details>
+        <summary>Quy đổi khoảng cách nghiêng</summary>
+        <p>Nhập khoảng cách dọc theo dốc và góc nghiêng so với phương ngang, tính bằng độ.</p>
+        <div class="field-grid"><label>Khoảng cách nghiêng (mm)<input id="slope-length" inputmode="decimal" placeholder="Ví dụ 3200"></label><label>Góc nghiêng (°)<input id="slope-angle" inputmode="decimal" placeholder="Ví dụ 12,5"></label></div>
+        <p id="slope-result" class="dialog-status" role="status"></p>
+        <button class="button" id="apply-horizontal" disabled>Điền khoảng cách ngang</button>
+        <p id="slope-apply-status" class="dialog-status" role="status" hidden></p>
+      </details>
+      <h3>Nhận khoảng cách từ thước laser</h3>
+      <label class="device-target-label">Ô nhận số đo<select id="measurement-target"></select></label>
+      <div class="field-grid device-buttons">
+        <button class="button" id="connect-ble">Kết nối Leica DISTO BLE</button>
+        <button class="button" id="disconnect-ble" disabled>Ngắt Bluetooth</button>
+      </div>
+      <p id="ble-status" class="dialog-status" role="status">Chưa kết nối Bluetooth.</p>
+      <details>
+        <summary>Thước gửi số như bàn phím</summary>
+        <p>Ghép thước qua Bluetooth trong Windows, hoặc dùng phần mềm hãng hỗ trợ gửi số như bàn phím. Bấm vào ô dưới đây, gửi phép đo rồi nhấn Enter nếu thiết bị chưa tự gửi Enter.</p>
+        <div class="field-grid"><label>Số đo từ thước<input id="keyboard-reading" inputmode="decimal" placeholder="Ví dụ 4,2 m"></label><label>Đơn vị mặc định<select id="keyboard-unit"><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option><option value="in">in</option><option value="ft">ft</option></select></label></div>
+        <button class="button" id="apply-keyboard">Điền vào ô nhận</button>
+        <p id="keyboard-status" class="dialog-status" role="status"></p>
+      </details>
+    </div>
+  </dialog>
+  <dialog id="export-dialog">
+    <div class="dialog-head"><h2>Xuất SketchUp</h2><button class="icon-button" data-close aria-label="Đóng">×</button></div>
+    <div class="dialog-body">
+      <p id="export-room"></p>
+      <div class="field-grid">
+        <button class="button primary" id="download-skp">Tải SketchUp (.skp)</button>
+        <button class="button" id="download-dae">Tải COLLADA (.dae)</button>
+      </div>
+      <p id="export-status" class="dialog-status" role="status"></p>
+    </div>
+  </dialog>
+  <dialog id="help-dialog">
+    <div class="dialog-head"><h2>Cách sử dụng</h2><button class="icon-button" data-close aria-label="Đóng">×</button></div>
+    <div class="dialog-body">
+      <ol>
+        <li>Thêm không gian bằng nút <strong>+</strong>. Nhập kích thước thông thủy theo mm. Bạn cũng có thể gõ đơn vị, ví dụ <strong>4,2 m</strong>.</li>
+        <li>Với phòng nhiều cạnh, đi dọc chu vi và nhập từng cạnh. Lấy cạnh đầu làm hướng 0°, các hướng khác tính ngược chiều kim đồng hồ trên mặt bằng. Nhập cả cạnh cuối về điểm đầu.</li>
+        <li>Để lấy hướng bằng điện thoại, chọn <strong>Đo hướng</strong> và bật cảm biến. Cầm máy nằm ngang, hướng đầu máy từ đầu đến cuối cạnh. Chốt cạnh đầu làm mốc rồi lần lượt chốt các cạnh còn lại.</li>
+        <li>Xem lại mặt bằng và kiểm tra sai số khép kín. Tường được dựng ra ngoài đường bao đo trong phòng.</li>
+        <li>Bấm <strong>Xuất SketchUp</strong> rồi tải <strong>.skp</strong>. Nếu dùng <strong>.dae</strong>, chọn <strong>File → Import → COLLADA</strong> trong SketchUp.</li>
+      </ol>
+      <p>Mỗi lần xuất gồm sàn và tường toàn chiều cao của không gian đang mở. Chế độ cắt tường chỉ áp dụng cho bản xem trước.</p>
+      <p>Dùng <strong>Lưu dự phòng</strong> để giữ số đo khi chuyển máy hoặc đổi trình duyệt.</p>
+    </div>
+  </dialog>
+  <div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>
