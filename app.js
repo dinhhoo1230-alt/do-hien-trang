@@ -247,6 +247,7 @@ $('measure-content').addEventListener('input', event => {
     $('shape').focus();
   }
   if (field === 'shape' || field === 'name') renderRooms();
+  if (part === 'length' || field === 'height' || field === 'wall') syncHeadingMeasurements();
   renderModel();
   persist();
 });
@@ -316,6 +317,7 @@ $('cut-walls').addEventListener('change', event => {
 const headingSensor = new SurveyOrientation.Sensor(renderHeadingPanel);
 const headingPanel = $('heading-panel');
 const headingEdge = $('heading-edge');
+const headingMeasurements = [$('heading-length'), $('heading-height'), $('heading-wall')];
 let headingSimulation = false;
 let temporaryHeadingReference;
 let headingViewZero;
@@ -340,7 +342,18 @@ function refreshHeadingChoices() {
   const current = headingEdge.value;
   headingEdge.replaceChildren(...room().edges.map((_, index) => new Option(index === 0 ? 'Cạnh 1 · Mốc 0°' : 'Cạnh ' + (index + 1), index)));
   if (current && Number(current) < room().edges.length) headingEdge.value = current;
+  syncHeadingMeasurements();
   renderHeadingPanel();
+}
+
+function syncHeadingMeasurements() {
+  const active = room();
+  if (headingPanel.hidden || active.shape !== 'polygon') return;
+  const edge = active.edges[Number(headingEdge.value)];
+  for (const input of headingMeasurements) {
+    const value = input.dataset.field ? active[input.dataset.field] : edge.length;
+    if (input.value !== value) input.value = value;
+  }
 }
 
 function headingSample() {
@@ -428,7 +441,21 @@ $('heading-simulate').onclick = () => {
   headingViewZero = undefined;
   renderHeadingPanel();
 };
-headingEdge.onchange = $('heading-dial').oninput = renderHeadingPanel;
+headingEdge.onchange = () => {
+  syncHeadingMeasurements();
+  renderHeadingPanel();
+};
+$('heading-dial').oninput = renderHeadingPanel;
+for (const input of headingMeasurements) {
+  input.onfocus = () => { previousFocusedField = input.dataset.field ?? 'edge:' + headingEdge.value; };
+  input.oninput = () => {
+    const selector = input.dataset.field ? '[data-field="' + input.dataset.field + '"]' :
+      '[data-edge="' + headingEdge.value + '"][data-part="length"]';
+    const editorInput = $('measure-content').querySelector(selector);
+    editorInput.value = input.value;
+    editorInput.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+}
 $('heading-zero').onclick = () => {
   const sample = headingSample();
   if (!canUseHeading(sample)) return;

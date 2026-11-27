@@ -80,6 +80,12 @@ h1 { margin: 4px 0 0; font-size: clamp(1.55rem, 2.8vw, 2.45rem); line-height: 1.
 .heading-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
 .heading-buttons button { min-height: 44px; }
 .heading-buttons .text-button { padding-inline: 6px; }
+.heading-quick-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(91px, min(38%, 155px)); align-items: end; gap: 7px; margin-top: 7px; }
+.heading-room-dimensions { margin-top: 7px; }
+.heading-quick-row input, .heading-room-dimensions input {
+  width: 100%; min-width: 0; min-height: 44px; border: 1px solid #cbd3e2; border-radius: 7px;
+  padding: 5px 9px; background: #fff; color: var(--ink); font-size: 1rem;
+}
 .heading-panel input[type="range"] { width: 100%; margin: 0; min-height: 35px; accent-color: var(--accent); }
 #heading-simulator { margin-top: 8px; }
 .preview-stage {

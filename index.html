@@ -71,8 +71,17 @@
                 <button class="button primary" id="heading-capture" disabled>Chốt hướng mốc</button>
                 <button class="button" id="heading-zero" disabled>Đặt 0°</button>
                 <button class="button" id="heading-sensor">Bật cảm biến</button>
-                <button class="text-button" id="heading-simulate" aria-pressed="false">Mô phỏng</button>
-                <button class="text-button" id="heading-restore-zero" hidden>Về mốc phòng</button>
+              </div>
+              <div class="heading-quick-row">
+                <div class="heading-buttons">
+                  <button class="text-button" id="heading-simulate" aria-pressed="false">Mô phỏng</button>
+                  <button class="text-button" id="heading-restore-zero" hidden>Về mốc phòng</button>
+                </div>
+                <label>Dài cạnh (mm)<input id="heading-length" inputmode="decimal" maxlength="32" enterkeyhint="done"></label>
+              </div>
+              <div class="field-grid heading-room-dimensions">
+                <label>Cao thông thủy (mm)<input id="heading-height" data-field="height" inputmode="decimal" maxlength="32" enterkeyhint="done"></label>
+                <label>Dày tường (mm)<input id="heading-wall" data-field="wall" inputmode="decimal" maxlength="32" enterkeyhint="done"></label>
               </div>
               <label id="heading-simulator" hidden>Góc xoay mô phỏng<input id="heading-dial" type="range" min="0" max="359" step="1" value="0"></label>
             </div>
