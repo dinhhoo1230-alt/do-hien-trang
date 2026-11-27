@@ -6,9 +6,13 @@ class SurveyViewport {
     this.context = canvas.getContext('2d');
     this.mode = '3d';
     this.planRotation = 0;
+    this.alignPlanToPhone = false;
     this.cut = true;
     this.fit();
     new ResizeObserver(() => this.draw()).observe(canvas);
+    window.screen.orientation?.addEventListener('change', () => {
+      if (this.alignPlanToPhone) this.draw();
+    });
     canvas.addEventListener('pointerdown', event => {
       if (this.mode !== '3d' || event.button !== 0) return;
       canvas.setPointerCapture(event.pointerId);
@@ -55,12 +59,17 @@ class SurveyViewport {
     this.draw();
   }
 
-  setHeadingGuide(guide, rotation = 0) {
+  setHeadingGuide(guide, rotation = 0, alignToPhone = false) {
     if (this.headingGuide?.index === guide?.index && this.headingGuide?.angle === guide?.angle &&
-        this.planRotation === rotation) return;
+        this.planRotation === rotation && this.alignPlanToPhone === alignToPhone) return;
     this.headingGuide = guide;
     this.planRotation = rotation;
+    this.alignPlanToPhone = alignToPhone;
     this.draw();
+  }
+
+  get planScreenOffset() {
+    return this.alignPlanToPhone ? (window.screen.orientation?.angle ?? 0) - 90 : 0;
   }
 
   draw() {
@@ -111,7 +120,7 @@ class SurveyViewport {
   drawPlan(width, height) {
     const ctx = this.context;
     const { points, error } = this.profile;
-    const rotation = this.planRotation * Math.PI / 180;
+    const rotation = (this.planRotation + this.planScreenOffset) * Math.PI / 180;
     const cosine = Math.cos(rotation);
     const sine = Math.sin(rotation);
     const project = ([x, y]) => [x * cosine + y * sine, x * sine - y * cosine];
@@ -168,7 +177,7 @@ class SurveyViewport {
     const ctx = this.context;
     ctx.save();
     ctx.translate(x, y);
-    ctx.rotate(-this.headingGuide.angle * Math.PI / 180);
+    ctx.rotate((this.planScreenOffset - this.headingGuide.angle) * Math.PI / 180);
     this.path([[0, 0], [62, 0]], false);
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#fff';

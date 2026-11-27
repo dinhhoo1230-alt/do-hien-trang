@@ -395,7 +395,7 @@ function renderHeadingPanel() {
     if (sample.level && Number.isFinite(sample.accuracy)) status += ' La bàn báo sai số khoảng ±' + fmt(sample.accuracy, 1) + '°.';
   }
   if ($('heading-status').textContent !== status) $('heading-status').textContent = status;
-  viewport.setHeadingGuide(planar === null ? null : { index, angle: planar }, rotation);
+  viewport.setHeadingGuide(planar === null ? null : { index, angle: planar }, rotation, true);
 }
 
 $('heading-tool').onclick = () => {
