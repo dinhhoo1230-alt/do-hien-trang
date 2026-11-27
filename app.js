@@ -277,6 +277,7 @@ $('measure-content').addEventListener('click', event => {
       }
       delete active.headingReference;
       temporaryHeadingReference = undefined;
+      headingViewZero = undefined;
       $('heading-edge').value = '0';
     }
     active.edges.splice(Number(control.dataset.removeEdge), 1);
@@ -317,11 +318,13 @@ const headingPanel = $('heading-panel');
 const headingEdge = $('heading-edge');
 let headingSimulation = false;
 let temporaryHeadingReference;
+let headingViewZero;
 
 function resetHeadingMode() {
   headingSensor.stop();
   headingSimulation = false;
   temporaryHeadingReference = undefined;
+  headingViewZero = undefined;
   headingEdge.value = '0';
 }
 
@@ -349,6 +352,10 @@ function headingReference(sample) {
     reference?.source === sample.source && Number.isFinite(reference.angle));
 }
 
+function canUseHeading(sample) {
+  return Boolean(sample?.level && (headingSimulation || headingSensor.stable));
+}
+
 function formatPlanHeading(angle) {
   return String(Number(SurveyOrientation.normalize(Math.round(angle * 10) / 10).toFixed(1)));
 }
@@ -362,10 +369,16 @@ function renderHeadingPanel() {
   const index = Number(headingEdge.value);
   const sample = headingSample();
   const reference = sample && headingReference(sample);
-  const planar = sample?.level ? SurveyOrientation.planAngle(sample.angle, reference?.angle) : null;
+  const viewZero = sample && headingViewZero?.source === sample.source ? headingViewZero : undefined;
+  const planar = sample?.level ? SurveyOrientation.planAngle(sample.angle, viewZero?.angle ?? reference?.angle) : null;
+  const rotation = viewZero && reference ? SurveyOrientation.planAngle(viewZero.angle, reference.angle) : 0;
+  const ready = canUseHeading(sample);
   const capture = $('heading-capture');
-  capture.disabled = !(sample?.level && (headingSimulation || headingSensor.stable) && (reference || !index));
+  capture.disabled = !(ready && (reference || !index));
   capture.textContent = index ? 'Chốt hướng cạnh ' + (index + 1) : 'Chốt hướng mốc';
+  $('heading-zero').disabled = !ready;
+  $('heading-restore-zero').hidden = !viewZero;
+  $('heading-value-label').textContent = viewZero ? 'So với mốc vừa đặt' : 'Mũi tên trên mặt bằng';
   $('heading-sensor').disabled = headingSensor.waiting || (!headingSimulation && Boolean(sample));
   $('heading-simulator').hidden = !headingSimulation;
   $('heading-simulate').setAttribute('aria-pressed', String(headingSimulation));
@@ -382,7 +395,7 @@ function renderHeadingPanel() {
     if (sample.level && Number.isFinite(sample.accuracy)) status += ' La bàn báo sai số khoảng ±' + fmt(sample.accuracy, 1) + '°.';
   }
   if ($('heading-status').textContent !== status) $('heading-status').textContent = status;
-  viewport.setHeadingGuide(planar === null ? null : { index, angle: planar });
+  viewport.setHeadingGuide(planar === null ? null : { index, angle: planar }, rotation);
 }
 
 $('heading-tool').onclick = () => {
@@ -406,17 +419,31 @@ $('heading-convert').onclick = () => {
 };
 $('heading-sensor').onclick = () => {
   headingSimulation = false;
+  headingViewZero = undefined;
   headingSensor.start();
 };
 $('heading-simulate').onclick = () => {
   headingSensor.stop();
   headingSimulation = !headingSimulation;
+  headingViewZero = undefined;
   renderHeadingPanel();
 };
 headingEdge.onchange = $('heading-dial').oninput = renderHeadingPanel;
+$('heading-zero').onclick = () => {
+  const sample = headingSample();
+  if (!canUseHeading(sample)) return;
+  headingViewZero = { source: sample.source, angle: sample.angle };
+  renderHeadingPanel();
+  toast('Đã đặt hướng đang chĩa làm 0° để xem mặt bằng.');
+};
+$('heading-restore-zero').onclick = () => {
+  headingViewZero = undefined;
+  renderHeadingPanel();
+  $('heading-zero').focus();
+};
 $('heading-capture').onclick = () => {
   const sample = headingSample();
-  if (!sample?.level || (!headingSimulation && !headingSensor.stable)) return;
+  if (!canUseHeading(sample)) return;
   const active = room();
   const index = Number(headingEdge.value);
   const reference = headingReference(sample);
@@ -438,6 +465,7 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && !headingPanel.hidden && !headingSimulation) {
     headingSensor.stop();
     temporaryHeadingReference = undefined;
+    headingViewZero = undefined;
     renderHeadingPanel();
   }
 });

@@ -64,13 +64,15 @@
             <div id="heading-controls" hidden>
               <div class="heading-inputs">
                 <label>Cạnh cần đo<select id="heading-edge"></select></label>
-                <div class="heading-reading"><span>Mũi tên trên mặt bằng</span><strong id="heading-value">—</strong></div>
+                <div class="heading-reading"><span id="heading-value-label">Mũi tên trên mặt bằng</span><strong id="heading-value">—</strong></div>
               </div>
               <p id="heading-status" role="status"></p>
               <div class="heading-buttons">
                 <button class="button primary" id="heading-capture" disabled>Chốt hướng mốc</button>
+                <button class="button" id="heading-zero" disabled>Đặt 0°</button>
                 <button class="button" id="heading-sensor">Bật cảm biến</button>
                 <button class="text-button" id="heading-simulate" aria-pressed="false">Mô phỏng</button>
+                <button class="text-button" id="heading-restore-zero" hidden>Về mốc phòng</button>
               </div>
               <label id="heading-simulator" hidden>Góc xoay mô phỏng<input id="heading-dial" type="range" min="0" max="359" step="1" value="0"></label>
             </div>
@@ -152,6 +154,7 @@
         <li>Thêm không gian bằng nút <strong>+</strong>. Nhập kích thước thông thủy theo mm. Bạn cũng có thể gõ đơn vị, ví dụ <strong>4,2 m</strong>.</li>
         <li>Với phòng nhiều cạnh, đi dọc chu vi và nhập từng cạnh. Lấy cạnh đầu làm hướng 0°, các hướng khác tính ngược chiều kim đồng hồ trên mặt bằng. Nhập cả cạnh cuối về điểm đầu.</li>
         <li>Để lấy hướng bằng điện thoại, chọn <strong>Đo hướng</strong> và bật cảm biến. Cầm máy nằm ngang, hướng đầu máy từ đầu đến cuối cạnh. Chốt cạnh đầu làm mốc rồi lần lượt chốt các cạnh còn lại.</li>
+        <li>Bấm <strong>Đặt 0°</strong> để xoay góc nhìn mặt bằng theo hướng đang chĩa điện thoại. Khi chốt một cạnh, số đo vẫn được lưu theo mốc của cạnh đầu. Bấm <strong>Về mốc phòng</strong> để trở lại góc nhìn ban đầu.</li>
         <li>Xem lại mặt bằng và kiểm tra sai số khép kín. Tường được dựng ra ngoài đường bao đo trong phòng.</li>
         <li>Bấm <strong>Xuất SketchUp</strong> rồi tải <strong>.skp</strong>. Nếu dùng <strong>.dae</strong>, chọn <strong>File → Import → COLLADA</strong> trong SketchUp.</li>
       </ol>
