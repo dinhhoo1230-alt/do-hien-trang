@@ -317,7 +317,9 @@ $('cut-walls').addEventListener('change', event => {
 const headingSensor = new SurveyOrientation.Sensor(renderHeadingPanel);
 const headingPanel = $('heading-panel');
 const headingEdge = $('heading-edge');
-const headingMeasurements = [$('heading-length'), $('heading-height'), $('heading-wall')];
+const headingLength = $('heading-length');
+const headingMeasurements = [headingLength, $('heading-height'), $('heading-wall')];
+let skipLengthBlur = false;
 let headingSimulation = false;
 let temporaryHeadingReference;
 let headingViewZero;
@@ -456,6 +458,34 @@ for (const input of headingMeasurements) {
     editorInput.dispatchEvent(new Event('input', { bubbles: true }));
   };
 }
+
+function finishHeadingLength() {
+  if (headingPanel.hidden || room().shape !== 'polygon' || document.hidden) return;
+  if (!Number.isFinite(geometry.parseDistance(headingLength.value))) {
+    toast('Nhập chiều dài hợp lệ để tự chốt hướng.');
+    return;
+  }
+  if (!captureHeading()) toast('Đã lưu chiều dài. ' + $('heading-status').textContent);
+}
+
+// iPhone's keyboard accessory Done dismisses the input without an Enter key event.
+document.addEventListener('pointerdown', event => {
+  skipLengthBlur = document.activeElement === headingLength && event.target !== headingLength;
+}, true);
+document.addEventListener('click', () => { skipLengthBlur = false; }, true);
+document.addEventListener('pointercancel', () => { skipLengthBlur = false; }, true);
+headingLength.onblur = event => {
+  if (!skipLengthBlur && !event.relatedTarget) finishHeadingLength();
+  skipLengthBlur = false;
+};
+headingLength.onkeydown = event => {
+  if (event.key !== 'Enter' || event.isComposing) return;
+  event.preventDefault();
+  skipLengthBlur = true;
+  headingLength.blur();
+  finishHeadingLength();
+};
+
 $('heading-zero').onclick = () => {
   const sample = headingSample();
   if (!canUseHeading(sample)) return;
@@ -468,13 +498,13 @@ $('heading-restore-zero').onclick = () => {
   renderHeadingPanel();
   $('heading-zero').focus();
 };
-$('heading-capture').onclick = () => {
+function captureHeading() {
   const sample = headingSample();
-  if (!canUseHeading(sample)) return;
+  if (!canUseHeading(sample)) return false;
   const active = room();
   const index = Number(headingEdge.value);
   const reference = headingReference(sample);
-  if (index && !reference) return;
+  if (index && !reference) return false;
   const angle = index ? formatPlanHeading(SurveyOrientation.planAngle(sample.angle, reference.angle)) : '0';
   if (!index) {
     const anchor = { source: sample.source, angle: sample.angle };
@@ -487,7 +517,9 @@ $('heading-capture').onclick = () => {
   renderModel();
   persist();
   toast('Cạnh ' + (index + 1) + ' · Đã lưu ' + fmt(Number(angle), 1) + '°' + (headingSimulation ? ' (mô phỏng)' : ''));
-};
+  return true;
+}
+$('heading-capture').onclick = captureHeading;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && !headingPanel.hidden && !headingSimulation) {
     headingSensor.stop();
