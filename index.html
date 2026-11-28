@@ -52,6 +52,7 @@
             <button id="view-3d" aria-pressed="true">Mô hình 3D</button>
           </div>
           <button class="button" id="heading-tool" aria-controls="heading-panel" aria-expanded="false">↗ Đo hướng</button>
+          <button class="button" id="point-tool" aria-controls="point-panel" aria-expanded="false">Đo điểm 3D</button>
         </div>
       </div>
       <div class="workspace-panels">
@@ -86,6 +87,35 @@
               <label id="heading-simulator" hidden>Góc xoay mô phỏng<input id="heading-dial" type="range" min="0" max="359" step="1" value="0"></label>
             </div>
           </section>
+          <section class="heading-panel" id="point-panel" aria-label="Đo điểm 3D bằng điện thoại" hidden>
+            <div class="heading-buttons">
+              <button class="button" id="point-sensor">Bật cảm biến</button>
+              <button class="text-button" id="point-simulate" aria-pressed="false">Mô phỏng</button>
+            </div>
+            <div class="field-grid point-simulator" id="point-simulator" hidden>
+              <label>Xoay trái/phải<input id="point-yaw" type="range" min="-180" max="180" value="0"></label>
+              <label>Ngẩng/cúi<input id="point-pitch" type="range" min="-90" max="90" value="0"></label>
+            </div>
+            <p id="point-status" role="status"></p>
+            <div class="point-row" id="point-calibration">
+              <label>Cao máy so với sàn (mm)<input id="point-height" inputmode="decimal" maxlength="32" placeholder="Ví dụ 1300"></label>
+              <button class="button primary" id="point-zero" disabled>Đặt mốc 0°</button>
+            </div>
+            <div id="point-measure" hidden>
+              <div class="point-aim">
+                <div class="point-readings" id="point-angles"></div>
+                <button class="button" id="point-hold">Giữ hướng</button>
+              </div>
+              <form class="point-row" id="point-form">
+                <label>Khoảng cách laser (mm)<input id="point-distance" inputmode="decimal" maxlength="32" enterkeyhint="done" disabled></label>
+                <button class="button primary" id="point-save" type="submit" disabled>Ghi điểm</button>
+              </form>
+            </div>
+            <div class="point-history">
+              <p id="point-count"></p>
+              <button class="text-button" id="point-undo" hidden>Bỏ điểm cuối</button>
+            </div>
+          </section>
           <div class="preview-stage" id="preview-stage">
             <canvas id="viewport" role="img" aria-label="Bản xem trước hình học của không gian"></canvas>
             <div class="view-controls" aria-label="Điều khiển bản xem trước">
@@ -100,7 +130,7 @@
           </div>
           <p id="model-error" class="model-error" role="status" hidden></p>
           <p id="view-legend" class="view-legend">Kích thước thông thủy · Đơn vị mm</p>
-          <div class="stats" aria-label="Thông số không gian">
+          <div class="stats" id="room-stats" aria-label="Thông số không gian">
             <div><span>Diện tích sàn</span><strong id="area">—</strong></div>
             <div><span>Chu vi trong</span><strong id="perimeter">—</strong></div>
             <div><span>Chiều cao</span><strong id="height-stat">—</strong></div>

@@ -14,7 +14,7 @@ class SurveyViewport {
       if (this.alignPlanToPhone) this.draw();
     });
     canvas.addEventListener('pointerdown', event => {
-      if (this.mode !== '3d' || event.button !== 0) return;
+      if (this.mode === 'plan' || event.button !== 0) return;
       canvas.setPointerCapture(event.pointerId);
       this.drag = [event.clientX, event.clientY];
     });
@@ -29,7 +29,7 @@ class SurveyViewport {
     canvas.addEventListener('lostpointercapture', endDrag);
     canvas.addEventListener('pointercancel', endDrag);
     canvas.addEventListener('wheel', event => {
-      if (this.mode !== '3d' || !this.model || this.model.error) return;
+      if (this.mode === 'plan' || (this.mode === '3d' && (!this.model || this.model.error))) return;
       event.preventDefault();
       this.zoomBy(event.deltaY > 0 ? 0.9 : 1.1);
     }, { passive: false });
@@ -68,6 +68,11 @@ class SurveyViewport {
     this.draw();
   }
 
+  setPointSurvey(points, height, ray) {
+    this.pointSurvey = { points, height, ray };
+    if (this.mode === 'points') this.draw();
+  }
+
   get planScreenOffset() {
     return this.alignPlanToPhone ? (window.screen.orientation?.angle ?? 0) - 90 : 0;
   }
@@ -87,7 +92,8 @@ class SurveyViewport {
     ctx.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0);
     ctx.clearRect(0, 0, width, height);
     ctx.lineJoin = 'round';
-    if (this.mode === 'plan' && this.profile?.points?.length > 1) this.drawPlan(width, height);
+    if (this.mode === 'points') this.drawPointSurvey(width, height);
+    else if (this.mode === 'plan' && this.profile?.points?.length > 1) this.drawPlan(width, height);
     else if (this.mode === 'plan' && this.headingGuide) this.drawHeading([width / 2, height / 2]);
     else if (this.mode === '3d' && this.model && !this.model.error) this.drawModel(width, height);
     else {
@@ -207,15 +213,70 @@ class SurveyViewport {
     ctx.textBaseline = 'alphabetic';
   }
 
-  drawModel(width, height) {
-    const ctx = this.context;
-    const { meshes, inner, outer, height: wallHeight } = this.model;
+  projection3d() {
     const sa = Math.sin(this.azimuth);
     const ca = Math.cos(this.azimuth);
     const se = Math.sin(this.elevation);
     const ce = Math.cos(this.elevation);
-    const project = ([x, y, z]) => [x * ca - y * sa, -(x * sa + y * ca) * se - z * ce,
+    return ([x, y, z]) => [x * ca - y * sa, -(x * sa + y * ca) * se - z * ce,
       (x * sa + y * ca) * ce - z * se];
+  }
+
+  drawPointSurvey(width, height) {
+    const ctx = this.context;
+    const { points = [], height: stationHeight, ray } = this.pointSurvey ?? {};
+    const project = this.projection3d();
+    const floor = project([0, 0, 0]);
+    const station = project([0, 0, stationHeight ?? 0]);
+    const projected = points.map(project);
+    const fit = this.fitProjection([floor, station, ...projected], width, height, 78);
+    const base = fit(floor);
+    const origin = fit(station);
+    if (stationHeight !== undefined) {
+      ctx.setLineDash([4, 4]);
+      this.path([base, origin], false);
+      ctx.strokeStyle = '#7775a8';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    for (const [index, point] of projected.entries()) {
+      const [x, y] = fit(point);
+      ctx.beginPath();
+      ctx.arc(x, y, index === points.length - 1 ? 5 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = index === points.length - 1 ? '#a64714' : '#5145ac';
+      ctx.fill();
+    }
+    if (ray) {
+      const [dx, dy] = project(ray);
+      ctx.save();
+      ctx.translate(...origin);
+      ctx.rotate(Math.atan2(dy, dx));
+      const length = 64 * Math.hypot(dx, dy);
+      if (length > 7) {
+        this.path([[0, 0], [length, 0]], false);
+        ctx.strokeStyle = '#3328a9';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        this.path([[length - 8, -5], [length + 2, 0], [length - 8, 5]]);
+        ctx.fillStyle = '#3328a9';
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+    ctx.beginPath();
+    ctx.arc(...origin, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#3328a9';
+    ctx.fill();
+    this.drawAxes(project, height);
+  }
+
+  drawModel(width, height) {
+    const ctx = this.context;
+    const { meshes, inner, outer, height: wallHeight } = this.model;
+    const project = this.projection3d();
+    const sa = Math.sin(this.azimuth);
+    const ca = Math.cos(this.azimuth);
     const projected = meshes.map((mesh, index) => {
       if (mesh.kind === 'floor' || !this.cut) return mesh.vertices.map(project);
       const [a, b] = [inner[index - 1], inner[index % inner.length]];

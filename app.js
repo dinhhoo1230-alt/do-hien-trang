@@ -7,6 +7,9 @@ const localExporter = location.protocol === 'http:' && location.hostname === '12
 const storageKey = 'do-hien-trang-project-v1';
 const roomLimit = 150;
 const edgeLimit = 100;
+const pointLimit = 2000;
+const pointCoordinateLimit = 10000000;
+const validPointCoordinate = value => Number.isFinite(value) && Math.abs(value) <= pointCoordinateLimit;
 const fmt = (value, digits = 2) => value.toLocaleString('vi-VN', { maximumFractionDigits: digits });
 const fieldNames = { length: 'Chiều dài', width: 'Chiều rộng', height: 'Chiều cao thông thủy', wall: 'Dày tường', slab: 'Dày sàn' };
 const fieldPlaceholders = { length: '4200', width: '3400', height: '2800', wall: '150', slab: '100', tolerance: '20' };
@@ -37,6 +40,14 @@ function validateProject(data) {
         typeof room.demo !== 'boolean' || !Array.isArray(room.edges) || room.edges.length < 3 || room.edges.length > edgeLimit ||
         !room.edges.every(edge => edge && textOf(edge.length, 32) && textOf(edge.heading, 32))) {
       throw new Error('Tệp chứa dữ liệu không gian không hợp lệ.');
+    }
+    if (room.points !== undefined && (!Array.isArray(room.points) || room.points.length > pointLimit ||
+        !room.points.every(point => Array.isArray(point) && point.length === 3 && point.every(validPointCoordinate)))) {
+      throw new Error('Tệp chứa điểm 3D không hợp lệ.');
+    }
+    if (room.pointStation !== undefined && (!room.pointStation || !validPointCoordinate(room.pointStation.height) ||
+        room.pointStation.height < 1 || typeof room.pointStation.simulated !== 'boolean')) {
+      throw new Error('Tệp chứa mốc đo 3D không hợp lệ.');
     }
     seen.add(room.id);
   }
@@ -119,18 +130,20 @@ function renderModel() {
   const profile = geometry.outline(active);
   model = geometry.build(active, profile);
   const valid = !model.error;
-  $('model-error').hidden = valid;
+  const viewingPoints = viewport.mode === 'points';
+  $('model-error').hidden = valid || viewingPoints;
   $('model-error').textContent = model.error ?? '';
   $('export').disabled = !valid;
   $('area').textContent = valid ? fmt(model.area / 1000000) + ' m²' : '—';
   $('perimeter').textContent = valid ? fmt(model.perimeter / 1000, 3) + ' m' : '—';
   const height = geometry.parseDistance(active.height);
   $('height-stat').textContent = Number.isFinite(height) ? fmt(height / 1000, 3) + ' m' : '—';
-  $('view-legend').textContent = profile.gap === undefined ? 'Kích thước thông thủy · Đơn vị mm' :
+  $('view-legend').textContent = viewingPoints ? 'Điểm đo · Cao độ Z tính từ sàn · mm' :
+    profile.gap === undefined ? 'Kích thước thông thủy · Đơn vị mm' :
     'Sai số khép kín ' + fmt(profile.gap, 2) + ' mm · Dung sai ' + active.tolerance + ' mm';
   $('footer-status').textContent = active.demo ? 'Thêm không gian để nhập số đo công trình của bạn.' :
     (valid ? 'Mô hình sẵn sàng xuất' : 'Hoàn tất số đo để xuất mô hình');
-  $('viewport').setAttribute('aria-label', valid
+  $('viewport').setAttribute('aria-label', viewingPoints ? 'Mũi ngắm và các điểm đo trong không gian' : valid
     ? 'Bản xem trước ' + name + ', diện tích ' + $('area').textContent + ', cao ' + $('height-stat').textContent
     : 'Bản xem trước ' + name + '. ' + model.error);
   viewport.update(model, profile);
@@ -195,6 +208,7 @@ function renderAll() {
 
 function selectRoom(roomId) {
   closeHeadingPanel();
+  closePointPanel();
   project.active = roomId;
   previousFocusedField = '';
   $('measurement-target').value = '';
@@ -294,16 +308,23 @@ $('measure-content').addEventListener('click', event => {
 
 function switchView(mode) {
   const plan = mode === 'plan';
+  const points = mode === 'points';
   $('view-plan').setAttribute('aria-pressed', String(plan));
-  $('view-3d').setAttribute('aria-pressed', String(!plan));
-  $('cut-control').hidden = plan;
+  $('view-3d').setAttribute('aria-pressed', String(mode === '3d'));
+  $('cut-control').hidden = mode !== '3d';
+  $('room-stats').hidden = points;
   $('view-hint').textContent = plan ? 'Hình chiếu bằng · mm' : 'Kéo để xoay · Cuộn để thu phóng';
   viewport.setMode(mode);
+  renderModel();
 }
 
-$('view-plan').onclick = () => switchView('plan');
+$('view-plan').onclick = () => {
+  closePointPanel();
+  switchView('plan');
+};
 $('view-3d').onclick = () => {
   closeHeadingPanel();
+  closePointPanel();
   switchView('3d');
 };
 $('zoom-in').onclick = () => viewport.zoomBy(1.2);
@@ -415,6 +436,7 @@ function renderHeadingPanel() {
 
 $('heading-tool').onclick = () => {
   if (!headingPanel.hidden) return closeHeadingPanel();
+  closePointPanel();
   switchView('plan');
   headingPanel.hidden = false;
   $('heading-tool').setAttribute('aria-expanded', 'true');
@@ -529,6 +551,167 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+const pointPanel = $('point-panel');
+const pointHeight = $('point-height');
+const pointDistance = $('point-distance');
+const pointSensor = new SurveyOrientation.Sensor(renderPointPanel, true);
+let pointViewBefore = '3d';
+let pointSimulation = false;
+let pointReference;
+let heldPointRay;
+
+function pointAim() {
+  if (!pointSimulation) return pointSensor.sample;
+  return { source: 'simulation', ray: SurveyOrientation.direction(Number($('point-yaw').value), Number($('point-pitch').value)) };
+}
+
+function renderPointPanel() {
+  if (pointPanel.hidden) return;
+  const { points = [], pointStation: station } = room();
+  const aim = pointAim();
+  if (pointReference && aim && pointReference.source !== aim.source) {
+    pointReference = undefined;
+    heldPointRay = undefined;
+    pointDistance.value = '';
+  }
+  const stable = pointSimulation || pointSensor.stable;
+  const pitch = aim && SurveyOrientation.aimAngles(aim.ray).pitch;
+  const height = pointReference?.height ?? station?.height;
+  const liveRay = aim && pointReference && SurveyOrientation.aimInRoom(aim.ray, pointReference.forward);
+  const ray = heldPointRay ?? liveRay;
+  const full = points.length >= pointLimit;
+  const canSave = !!heldPointRay && !full && Number.isFinite(geometry.parseDistance(pointDistance.value));
+  const disableSensor = station?.simulated === true || (!pointSimulation && (pointSensor.waiting || !!aim));
+  $('point-sensor').disabled = disableSensor;
+  $('point-simulate').disabled = station?.simulated === false;
+  $('point-simulate').setAttribute('aria-pressed', String(pointSimulation));
+  $('point-simulator').hidden = !pointSimulation;
+  $('point-calibration').hidden = !!pointReference;
+  $('point-measure').hidden = !pointReference;
+  pointHeight.disabled = !!station;
+  $('point-zero').disabled = !aim || !stable || Math.abs(pitch) > 15 ||
+    !Number.isFinite(geometry.parseDistance(pointHeight.value));
+  $('point-hold').disabled = !heldPointRay && (!liveRay || !stable || full);
+  $('point-hold').textContent = heldPointRay ? 'Ngắm lại' : 'Giữ hướng';
+  pointDistance.disabled = !heldPointRay || full;
+  $('point-save').disabled = !canSave;
+  $('point-undo').hidden = !points.length;
+  const last = points.at(-1);
+  const previous = points.at(-2);
+  const count = fmt(points.length, 0) + ' điểm' + (station?.simulated ? ' mô phỏng' : '') +
+    (last ? ' · Z cuối ' + fmt(last[2], 0) + ' mm' : '') +
+    (previous ? ' · Chênh cao ' + fmt(last[2] - previous[2], 0) + ' mm' : '');
+  if ($('point-count').textContent !== count) $('point-count').textContent = count;
+  if (ray) {
+    const angles = SurveyOrientation.aimAngles(ray);
+    $('point-angles').textContent = 'Xoay ' + (angles.yaw === null ? '—' : fmt(angles.yaw, 1) + '°') +
+      ' · Ngẩng/cúi ' + fmt(angles.pitch, 1) + '°';
+  }
+  let status;
+  if (!aim) status = pointSensor.status || 'Bật cảm biến để ngắm bằng camera sau của điện thoại hoặc chọn Mô phỏng.';
+  else if (!pointReference) {
+    status = station ? 'Trở về đúng vị trí và hướng ngang đã dùng, rồi đặt lại mốc 0°.' :
+      'Chọn một vị trí cố định. Hướng camera sau theo phương ngang rồi đặt mốc 0°.';
+    if (Math.abs(pitch) > 15) status += ' Chỉnh điện thoại để camera nhìn ngang.';
+  } else if (full) status = 'Không gian đã đạt giới hạn ' + fmt(pointLimit, 0) + ' điểm.';
+  else if (heldPointRay) status = 'Đã giữ hướng. Nhập khoảng cách laser đo dọc hướng này.';
+  else status = pointSimulation ? 'Kéo thanh xoay và ngẩng/cúi, rồi bấm Giữ hướng.' :
+    'Xoay hoặc ngẩng/cúi điện thoại tại mốc. Ngắm trùng hướng tia laser rồi bấm Giữ hướng.';
+  if ($('point-status').textContent !== status) $('point-status').textContent = status;
+  viewport.setPointSurvey(points, height, ray);
+}
+
+function resetPointAim() {
+  pointReference = undefined;
+  heldPointRay = undefined;
+  pointDistance.value = '';
+}
+
+function closePointPanel() {
+  if (pointPanel.hidden) return;
+  pointPanel.hidden = true;
+  $('point-tool').setAttribute('aria-expanded', 'false');
+  pointSensor.stop();
+  resetPointAim();
+  viewport.setPointSurvey([], undefined, undefined);
+  switchView(pointViewBefore);
+}
+
+$('point-tool').onclick = () => {
+  if (!pointPanel.hidden) return closePointPanel();
+  closeHeadingPanel();
+  pointViewBefore = viewport.mode;
+  const station = room().pointStation;
+  pointSimulation = station?.simulated ?? false;
+  pointHeight.value = station?.height ?? '';
+  $('point-yaw').value = 0;
+  $('point-pitch').value = 0;
+  pointPanel.hidden = false;
+  $('point-tool').setAttribute('aria-expanded', 'true');
+  switchView('points');
+  renderPointPanel();
+};
+
+$('point-sensor').onclick = () => {
+  pointSimulation = false;
+  resetPointAim();
+  pointSensor.start();
+};
+$('point-simulate').onclick = () => {
+  pointSensor.stop();
+  pointSimulation = !pointSimulation;
+  resetPointAim();
+  renderPointPanel();
+};
+for (const control of [pointHeight, pointDistance, $('point-yaw'), $('point-pitch')]) control.oninput = renderPointPanel;
+
+$('point-zero').onclick = () => {
+  if ($('point-zero').disabled) return;
+  const { source, ray: [x, y] } = pointAim();
+  const horizontal = Math.hypot(x, y);
+  pointReference = { source, forward: [x / horizontal, y / horizontal], height: geometry.parseDistance(pointHeight.value) };
+  renderPointPanel();
+};
+
+$('point-hold').onclick = () => {
+  if ($('point-hold').disabled) return;
+  heldPointRay = heldPointRay ? undefined : SurveyOrientation.aimInRoom(pointAim().ray, pointReference.forward);
+  pointDistance.value = '';
+  renderPointPanel();
+};
+
+$('point-form').onsubmit = event => {
+  event.preventDefault();
+  if ($('point-save').disabled) return;
+  const active = room();
+  const distance = geometry.parseDistance(pointDistance.value);
+  const height = pointReference.height;
+  const point = heldPointRay.map((axis, index) => Math.round(axis * distance + (index === 2 ? height : 0)));
+  if (!point.every(validPointCoordinate)) return toast('Điểm vượt phạm vi tọa độ có thể lưu.');
+  active.pointStation ??= { height, simulated: pointSimulation };
+  (active.points ??= []).push(point);
+  heldPointRay = undefined;
+  pointDistance.value = '';
+  persist();
+  renderPointPanel();
+};
+
+$('point-undo').onclick = () => {
+  const active = room();
+  if (!active.points?.length) return;
+  active.points.pop();
+  if (!active.points.length) delete active.pointStation;
+  persist();
+  renderPointPanel();
+};
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden || pointPanel.hidden || pointSimulation) return;
+  pointSensor.stop();
+  if (!heldPointRay) resetPointAim();
+  renderPointPanel();
+});
+
 function download(content, filename, type) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const anchor = document.createElement('a');
@@ -597,6 +780,7 @@ $('restore-file').addEventListener('change', async event => {
     const loaded = validateProject(JSON.parse(await file.text()));
     if (!window.confirm('Thay công trình đang mở bằng “' + (loaded.name.trim() || 'Công trình') + '”?')) return;
     closeHeadingPanel();
+    closePointPanel();
     project = loaded;
     previousFocusedField = '';
     $('measurement-target').value = '';
