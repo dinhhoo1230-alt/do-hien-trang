@@ -5,23 +5,26 @@ const SurveyOrientation = (() => {
   const normalize = angle => (angle % 360 + 360) % 360;
   const signedAngle = angle => normalize(angle + 180) - 180;
   const planAngle = (heading, reference = 0) => normalize(reference - heading);
+  const elevation = up => Math.asin(Math.max(-1, Math.min(1, up))) / degrees;
 
   function direction(yaw, pitch) {
     const horizontal = Math.cos(pitch * degrees);
     return [Math.cos(yaw * degrees) * horizontal, Math.sin(yaw * degrees) * horizontal, Math.sin(pitch * degrees)];
   }
 
-  function readAim(event) {
-    if (![event.alpha, event.beta, event.gamma].every(Number.isFinite)) return;
+  function readAim(event, axis = 'camera') {
+    if (!Number.isFinite(event.beta) || (axis === 'camera' && !Number.isFinite(event.gamma))) return;
     const [a, b, g] = [event.alpha, event.beta, event.gamma].map(angle => angle * degrees);
-    // Device Orientation rotation Z-X'-Y'' applied to the rear camera axis (0, 0, -1).
-    const ray = [
-      -Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g),
-      -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g),
-      -Math.cos(b) * Math.cos(g)
-    ];
+    // Rotate the physical top edge (+Y) or the rear camera axis (-Z) into the world frame.
+    const up = axis === 'top' ? Math.sin(b) : -Math.cos(b) * Math.cos(g);
+    const pitch = elevation(up);
     const source = event.absolute || event.type === 'deviceorientationabsolute' ? 'absolute' : 'relative';
-    return { source, level: true, ray };
+    if (!Number.isFinite(event.alpha)) return { source, axis, level: false, pitch };
+    const ray = axis === 'top'
+      ? [-Math.sin(a) * Math.cos(b), Math.cos(a) * Math.cos(b), up]
+      : [-Math.cos(a) * Math.sin(g) - Math.sin(a) * Math.sin(b) * Math.cos(g),
+        -Math.sin(a) * Math.sin(g) + Math.cos(a) * Math.sin(b) * Math.cos(g), up];
+    return { source, axis, level: true, pitch, ray };
   }
 
   function aimInRoom([x, y, z], [forwardX, forwardY]) {
@@ -30,7 +33,7 @@ const SurveyOrientation = (() => {
 
   function aimAngles([x, y, z]) {
     const yaw = Math.hypot(x, y) < 0.00001 ? null : signedAngle(Math.atan2(y, x) / degrees);
-    return { yaw, pitch: Math.asin(Math.max(-1, Math.min(1, z))) / degrees };
+    return { yaw, pitch: elevation(z) };
   }
 
   function read(event) {
@@ -48,20 +51,23 @@ const SurveyOrientation = (() => {
   }
 
   class Sensor {
-    constructor(onChange, aim = false) {
+    constructor(onChange, readSample = read) {
       this.onChange = onChange;
+      this.requestAbsolute = readSample === read;
       this.session = 0;
       this.receive = event => {
-        const sample = aim ? readAim(event) : read(event);
+        const sample = readSample(event);
         if (!sample) return;
         const priority = ['relative', 'absolute', 'compass'];
-        if (this.sample && priority.indexOf(sample.source) < priority.indexOf(this.sample.source)) return;
+        if (this.sample && this.sample.axis === sample.axis && (this.requestAbsolute || this.sample.level) &&
+            priority.indexOf(sample.source) < priority.indexOf(this.sample.source)) return;
         const now = performance.now();
         const reference = this.stableSample;
-        const moved = reference && (aim
-          ? sample.ray.reduce((dot, axis, index) => dot + axis * reference.ray[index], 0) < Math.cos(1.5 * degrees)
+        const moved = reference?.level && sample.level && (sample.ray
+          ? sample.ray.reduce((dot, value, index) => dot + value * reference.ray[index], 0) < Math.cos(1.5 * degrees)
           : Math.abs(signedAngle(sample.angle - reference.angle)) > 1.5);
-        if (!this.sample || this.sample.source !== sample.source || !sample.level || !this.sample.level || moved) {
+        if (!this.sample || this.sample.source !== sample.source || this.sample.axis !== sample.axis ||
+            !sample.level || !this.sample.level || moved) {
           this.stableSample = sample;
           this.stableSince = now;
         }
@@ -95,7 +101,9 @@ const SurveyOrientation = (() => {
           this.waiting = true;
           this.status = 'Đang chờ bạn cấp quyền cảm biến…';
           this.onChange();
-          const permission = await orientation.requestPermission(true);
+          const permission = this.requestAbsolute
+            ? await orientation.requestPermission(true)
+            : await orientation.requestPermission();
           if (session !== this.session) return;
           if (permission !== 'granted') throw new Error('Chưa có quyền cảm biến hướng.');
         }

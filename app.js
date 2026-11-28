@@ -46,7 +46,8 @@ function validateProject(data) {
       throw new Error('Tệp chứa điểm 3D không hợp lệ.');
     }
     if (room.pointStation !== undefined && (!room.pointStation || !validPointCoordinate(room.pointStation.height) ||
-        room.pointStation.height < 1 || typeof room.pointStation.simulated !== 'boolean')) {
+        room.pointStation.height < 1 || typeof room.pointStation.simulated !== 'boolean' ||
+        (room.pointStation.aimAxis !== undefined && !['top', 'camera'].includes(room.pointStation.aimAxis)))) {
       throw new Error('Tệp chứa mốc đo 3D không hợp lệ.');
     }
     seen.add(room.id);
@@ -554,42 +555,55 @@ document.addEventListener('visibilitychange', () => {
 const pointPanel = $('point-panel');
 const pointHeight = $('point-height');
 const pointDistance = $('point-distance');
-const pointSensor = new SurveyOrientation.Sensor(renderPointPanel, true);
+const pointAxis = $('point-axis');
+const pointSensor = new SurveyOrientation.Sensor(renderPointPanel, event => SurveyOrientation.readAim(event, pointAxis.value));
 let pointViewBefore = '3d';
 let pointSimulation = false;
 let pointReference;
 let heldPointRay;
 
 function pointAim() {
-  if (!pointSimulation) return pointSensor.sample;
-  return { source: 'simulation', ray: SurveyOrientation.direction(Number($('point-yaw').value), Number($('point-pitch').value)) };
+  if (!pointSimulation) return pointSensor.sample?.axis === pointAxis.value ? pointSensor.sample : undefined;
+  const pitch = Number($('point-pitch').value);
+  return { source: 'simulation', pitch, ray: SurveyOrientation.direction(Number($('point-yaw').value), pitch) };
+}
+
+function renderLivePitch(pitch) {
+  const arrow = $('point-level-arrow');
+  const reading = $('point-live-pitch');
+  const live = Number.isFinite(pitch);
+  const angle = live ? Math.round(pitch) : 0;
+  const text = live ? (angle > 0 ? '+' : '') + fmt(angle, 0) + '°' : '—';
+  if (reading.textContent !== text) {
+    reading.textContent = text;
+    arrow.hidden = !live;
+    arrow.style.transform = 'rotate(' + -angle + 'deg)';
+  }
 }
 
 function renderPointPanel() {
   if (pointPanel.hidden) return;
   const { points = [], pointStation: station } = room();
   const aim = pointAim();
-  if (pointReference && aim && pointReference.source !== aim.source) {
-    pointReference = undefined;
-    heldPointRay = undefined;
-    pointDistance.value = '';
-  }
+  if (!heldPointRay && pointReference && aim?.ray && pointReference.source !== aim.source) resetPointAim();
   const stable = pointSimulation || pointSensor.stable;
-  const pitch = aim && SurveyOrientation.aimAngles(aim.ray).pitch;
+  const pitch = aim?.pitch;
+  renderLivePitch(pitch);
   const height = pointReference?.height ?? station?.height;
-  const liveRay = aim && pointReference && SurveyOrientation.aimInRoom(aim.ray, pointReference.forward);
+  const liveRay = aim?.ray && pointReference?.source === aim.source && SurveyOrientation.aimInRoom(aim.ray, pointReference.forward);
   const ray = heldPointRay ?? liveRay;
   const full = points.length >= pointLimit;
   const canSave = !!heldPointRay && !full && Number.isFinite(geometry.parseDistance(pointDistance.value));
-  const disableSensor = station?.simulated === true || (!pointSimulation && (pointSensor.waiting || !!aim));
+  const disableSensor = station?.simulated === true || !!heldPointRay || (!pointSimulation && (pointSensor.waiting || !!aim?.ray));
   $('point-sensor').disabled = disableSensor;
+  pointAxis.disabled = !!heldPointRay;
   $('point-simulate').disabled = station?.simulated === false;
   $('point-simulate').setAttribute('aria-pressed', String(pointSimulation));
   $('point-simulator').hidden = !pointSimulation;
   $('point-calibration').hidden = !!pointReference;
   $('point-measure').hidden = !pointReference;
   pointHeight.disabled = !!station;
-  $('point-zero').disabled = !aim || !stable || Math.abs(pitch) > 15 ||
+  $('point-zero').disabled = !aim?.ray || !stable || Math.abs(pitch) > 15 ||
     !Number.isFinite(geometry.parseDistance(pointHeight.value));
   $('point-hold').disabled = !heldPointRay && (!liveRay || !stable || full);
   $('point-hold').textContent = heldPointRay ? 'Ngắm lại' : 'Giữ hướng';
@@ -602,21 +616,24 @@ function renderPointPanel() {
     (last ? ' · Z cuối ' + fmt(last[2], 0) + ' mm' : '') +
     (previous ? ' · Chênh cao ' + fmt(last[2] - previous[2], 0) + ' mm' : '');
   if ($('point-count').textContent !== count) $('point-count').textContent = count;
-  if (ray) {
-    const angles = SurveyOrientation.aimAngles(ray);
-    $('point-angles').textContent = 'Xoay ' + (angles.yaw === null ? '—' : fmt(angles.yaw, 1) + '°') +
-      ' · Ngẩng/cúi ' + fmt(angles.pitch, 1) + '°';
-  }
+  const angles = ray && SurveyOrientation.aimAngles(ray);
+  const heading = angles && angles.yaw !== null ? fmt(angles.yaw, 1) + '°' : '—';
+  const angleText = 'Xoay ' + heading + (heldPointRay ? ' · Đã giữ ' + fmt(angles.pitch, 1) + '°' : '');
+  if ($('point-angles').textContent !== angleText) $('point-angles').textContent = angleText;
   let status;
-  if (!aim) status = pointSensor.status || 'Bật cảm biến để ngắm bằng camera sau của điện thoại hoặc chọn Mô phỏng.';
+  const usingTop = pointAxis.value === 'top';
+  if (heldPointRay) status = 'Nhập khoảng cách laser theo hướng đã giữ.';
+  else if (!aim) status = pointSensor.status || 'Bật cảm biến rồi nâng hoặc hạ điện thoại để kiểm tra góc.';
+  else if (!aim.ray) status = 'Đã nhận góc ngẩng/cúi. Chưa có hướng xoay để ghi điểm. Thử bật lại cảm biến trong Safari.';
   else if (!pointReference) {
-    status = station ? 'Trở về đúng vị trí và hướng ngang đã dùng, rồi đặt lại mốc 0°.' :
-      'Chọn một vị trí cố định. Hướng camera sau theo phương ngang rồi đặt mốc 0°.';
-    if (Math.abs(pitch) > 15) status += ' Chỉnh điện thoại để camera nhìn ngang.';
+    status = pointSimulation ? 'Đưa thanh ngẩng/cúi về 0°, nhập chiều cao rồi bấm Đặt mốc 0°.' :
+      station ? 'Trở về đúng vị trí và hướng ngang đã dùng, rồi đặt lại mốc 0°.' : usingTop ?
+      'Giữ iPhone nằm ngang, màn hình hướng lên. Chĩa đầu máy theo hướng mốc rồi bấm Đặt mốc 0°.' :
+      'Cầm iPhone đứng, hướng camera sau nhìn ngang rồi bấm Đặt mốc 0°.';
   } else if (full) status = 'Không gian đã đạt giới hạn ' + fmt(pointLimit, 0) + ' điểm.';
-  else if (heldPointRay) status = 'Đã giữ hướng. Nhập khoảng cách laser đo dọc hướng này.';
-  else status = pointSimulation ? 'Kéo thanh xoay và ngẩng/cúi, rồi bấm Giữ hướng.' :
-    'Xoay hoặc ngẩng/cúi điện thoại tại mốc. Ngắm trùng hướng tia laser rồi bấm Giữ hướng.';
+  else status = pointSimulation ? 'Kéo thanh xoay và ngẩng/cúi, rồi bấm Giữ hướng.' : usingTop ?
+    'Nâng hoặc hạ đầu iPhone theo tia laser rồi bấm Giữ hướng.' :
+    'Hướng camera sau theo tia laser rồi bấm Giữ hướng.';
   if ($('point-status').textContent !== status) $('point-status').textContent = status;
   viewport.setPointSurvey(points, height, ray);
 }
@@ -643,6 +660,7 @@ $('point-tool').onclick = () => {
   pointViewBefore = viewport.mode;
   const station = room().pointStation;
   pointSimulation = station?.simulated ?? false;
+  pointAxis.value = station?.aimAxis ?? (station && !station.simulated ? 'camera' : 'top');
   pointHeight.value = station?.height ?? '';
   $('point-yaw').value = 0;
   $('point-pitch').value = 0;
@@ -660,6 +678,10 @@ $('point-sensor').onclick = () => {
 $('point-simulate').onclick = () => {
   pointSensor.stop();
   pointSimulation = !pointSimulation;
+  resetPointAim();
+  renderPointPanel();
+};
+pointAxis.onchange = () => {
   resetPointAim();
   renderPointPanel();
 };
@@ -688,7 +710,7 @@ $('point-form').onsubmit = event => {
   const height = pointReference.height;
   const point = heldPointRay.map((axis, index) => Math.round(axis * distance + (index === 2 ? height : 0)));
   if (!point.every(validPointCoordinate)) return toast('Điểm vượt phạm vi tọa độ có thể lưu.');
-  active.pointStation ??= { height, simulated: pointSimulation };
+  active.pointStation = { height, simulated: pointSimulation, aimAxis: pointAxis.value };
   (active.points ??= []).push(point);
   heldPointRay = undefined;
   pointDistance.value = '';

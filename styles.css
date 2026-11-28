@@ -97,6 +97,15 @@ h1 { margin: 4px 0 0; font-size: clamp(1.55rem, 2.8vw, 2.45rem); line-height: 1.
 .point-readings { font-size: .88rem; font-weight: 660; color: var(--accent-dark); font-variant-numeric: tabular-nums; }
 .point-history { justify-content: space-between; margin-top: 5px; }
 .point-simulator { margin-top: 7px; }
+.point-toolbar { align-items: end; }
+.point-toolbar select { min-height: 44px; border: 1px solid #cbd3e2; border-radius: 7px; background: #fff; padding: 5px 7px; color: var(--ink); font-size: .94rem; }
+.point-level { margin-top: 8px; display: flex; align-items: center; gap: 10px; min-height: 58px; }
+.point-level > div:last-child { display: grid; gap: 3px; color: var(--muted); font-size: .8rem; }
+.point-level strong { color: var(--accent-dark); font-size: 1.15rem; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.point-level-graphic { position: relative; flex: 0 0 60px; height: 58px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.point-level-graphic::before { content: ""; position: absolute; inset: 50% 6px auto; border-top: 1px dashed var(--muted); }
+#point-level-arrow { position: absolute; left: 27px; top: calc(50% - 1px); width: 23px; height: 2px; border-radius: 2px; background: var(--accent); transform-origin: left; }
+#point-level-arrow::after { content: ""; position: absolute; right: 0; top: -3px; width: 6px; height: 6px; border: solid var(--accent); border-width: 2px 2px 0 0; transform: rotate(45deg); }
 .preview-stage {
   height: clamp(325px, 57vh, 610px); position: relative; background-color: var(--stage);
   background-image: radial-gradient(circle, #a9b5cc 1px, transparent 1px); background-size: 21px 21px;

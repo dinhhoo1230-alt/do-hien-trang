@@ -88,13 +88,18 @@
             </div>
           </section>
           <section class="heading-panel" id="point-panel" aria-label="Đo điểm 3D bằng điện thoại" hidden>
-            <div class="heading-buttons">
+            <div class="heading-buttons point-toolbar">
               <button class="button" id="point-sensor">Bật cảm biến</button>
               <button class="text-button" id="point-simulate" aria-pressed="false">Mô phỏng</button>
+              <label>Trục ngắm<select id="point-axis"><option value="top">Đầu iPhone</option><option value="camera">Camera sau</option></select></label>
             </div>
             <div class="field-grid point-simulator" id="point-simulator" hidden>
               <label>Xoay trái/phải<input id="point-yaw" type="range" min="-180" max="180" value="0"></label>
               <label>Ngẩng/cúi<input id="point-pitch" type="range" min="-90" max="90" value="0"></label>
+            </div>
+            <div class="point-level">
+              <div class="point-level-graphic" aria-hidden="true"><span id="point-level-arrow" hidden></span></div>
+              <div><span>Góc ngẩng/cúi trực tiếp</span><strong id="point-live-pitch">—</strong></div>
             </div>
             <p id="point-status" role="status"></p>
             <div class="point-row" id="point-calibration">
