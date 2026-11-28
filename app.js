@@ -46,7 +46,7 @@ function validateProject(data) {
       throw new Error('Tệp chứa điểm 3D không hợp lệ.');
     }
     if (room.pointStation !== undefined && (!room.pointStation || !validPointCoordinate(room.pointStation.height) ||
-        room.pointStation.height < 1 || typeof room.pointStation.simulated !== 'boolean' ||
+        room.pointStation.height < 0 || typeof room.pointStation.simulated !== 'boolean' ||
         (room.pointStation.aimAxis !== undefined && !['top', 'camera'].includes(room.pointStation.aimAxis)))) {
       throw new Error('Tệp chứa mốc đo 3D không hợp lệ.');
     }
@@ -139,7 +139,7 @@ function renderModel() {
   $('perimeter').textContent = valid ? fmt(model.perimeter / 1000, 3) + ' m' : '—';
   const height = geometry.parseDistance(active.height);
   $('height-stat').textContent = Number.isFinite(height) ? fmt(height / 1000, 3) + ' m' : '—';
-  $('view-legend').textContent = viewingPoints ? 'Điểm đo · Cao độ Z tính từ sàn · mm' :
+  $('view-legend').textContent = viewingPoints ? 'Điểm đo · Cao độ Z · mm' :
     profile.gap === undefined ? 'Kích thước thông thủy · Đơn vị mm' :
     'Sai số khép kín ' + fmt(profile.gap, 2) + ' mm · Dung sai ' + active.tolerance + ' mm';
   $('footer-status').textContent = active.demo ? 'Thêm không gian để nhập số đo công trình của bạn.' :
@@ -554,11 +554,13 @@ document.addEventListener('visibilitychange', () => {
 
 const pointPanel = $('point-panel');
 const pointHeight = $('point-height');
+const pointZero = $('point-zero');
 const pointDistance = $('point-distance');
 const pointAxis = $('point-axis');
 const pointSensor = new SurveyOrientation.Sensor(renderPointPanel, event => SurveyOrientation.readAim(event, pointAxis.value));
 let pointViewBefore = '3d';
 let pointSimulation = false;
+let pendingPointZero = false;
 let pointReference;
 let heldPointRay;
 
@@ -581,6 +583,10 @@ function renderLivePitch(pitch) {
   }
 }
 
+function readPointHeight() {
+  return geometry.parseNumber(pointHeight.value) === 0 ? 0 : geometry.parseDistance(pointHeight.value);
+}
+
 function renderPointPanel() {
   if (pointPanel.hidden) return;
   const { points = [], pointStation: station } = room();
@@ -588,6 +594,16 @@ function renderPointPanel() {
   if (!heldPointRay && pointReference && aim?.ray && pointReference.source !== aim.source) resetPointAim();
   const stable = pointSimulation || pointSensor.stable;
   const pitch = aim?.pitch;
+  const enteredHeight = readPointHeight();
+  const validHeight = Number.isFinite(enteredHeight);
+  if (pendingPointZero && (!validHeight || (!pointSensor.waiting && !aim?.ray))) pendingPointZero = false;
+  if (pendingPointZero && aim?.ray && stable && !document.hidden && Math.abs(pitch) <= 15) {
+    const [x, y] = aim.ray;
+    const horizontal = Math.hypot(x, y);
+    pointReference = { source: aim.source, forward: [x / horizontal, y / horizontal], height: enteredHeight };
+    pendingPointZero = false;
+    toast('Đã đặt mốc 0°.');
+  }
   renderLivePitch(pitch);
   const height = pointReference?.height ?? station?.height;
   const liveRay = aim?.ray && pointReference?.source === aim.source && SurveyOrientation.aimInRoom(aim.ray, pointReference.forward);
@@ -603,8 +619,9 @@ function renderPointPanel() {
   $('point-calibration').hidden = !!pointReference;
   $('point-measure').hidden = !pointReference;
   pointHeight.disabled = !!station;
-  $('point-zero').disabled = !aim?.ray || !stable || Math.abs(pitch) > 15 ||
-    !Number.isFinite(geometry.parseDistance(pointHeight.value));
+  pointZero.disabled = !validHeight;
+  const zeroLabel = pendingPointZero ? 'Hủy đặt mốc' : 'Đặt mốc 0°';
+  if (pointZero.textContent !== zeroLabel) pointZero.textContent = zeroLabel;
   $('point-hold').disabled = !heldPointRay && (!liveRay || !stable || full);
   $('point-hold').textContent = heldPointRay ? 'Ngắm lại' : 'Giữ hướng';
   pointDistance.disabled = !heldPointRay || full;
@@ -622,14 +639,18 @@ function renderPointPanel() {
   if ($('point-angles').textContent !== angleText) $('point-angles').textContent = angleText;
   let status;
   const usingTop = pointAxis.value === 'top';
+  const alignAim = usingTop ? 'Giữ iPhone nằm ngang, màn hình hướng lên.' : 'Cầm iPhone đứng, hướng camera sau nhìn ngang.';
   if (heldPointRay) status = 'Nhập khoảng cách laser theo hướng đã giữ.';
-  else if (!aim) status = pointSensor.status || 'Bật cảm biến rồi nâng hoặc hạ điện thoại để kiểm tra góc.';
-  else if (!aim.ray) status = 'Đã nhận góc ngẩng/cúi. Chưa có hướng xoay để ghi điểm. Thử bật lại cảm biến trong Safari.';
+  else if (pendingPointZero && aim?.ray) status = pointSimulation ?
+    'Đưa thanh ngẩng/cúi về gần 0° để chốt mốc.' : alignAim + ' Mốc sẽ được chốt khi hướng ngắm ổn định.';
+  else if (!aim && pointSensor.waiting) status = pointSensor.status;
+  else if (!aim && pointSensor.status) status = pointSensor.status + ' Mở trang trực tiếp trong Safari rồi thử lại.';
+  else if (aim && !aim.ray) status = 'Đã nhận góc ngẩng/cúi. Chưa có hướng xoay để ghi điểm. Thử bật lại cảm biến trong Safari.';
   else if (!pointReference) {
-    status = pointSimulation ? 'Đưa thanh ngẩng/cúi về 0°, nhập chiều cao rồi bấm Đặt mốc 0°.' :
-      station ? 'Trở về đúng vị trí và hướng ngang đã dùng, rồi đặt lại mốc 0°.' : usingTop ?
-      'Giữ iPhone nằm ngang, màn hình hướng lên. Chĩa đầu máy theo hướng mốc rồi bấm Đặt mốc 0°.' :
-      'Cầm iPhone đứng, hướng camera sau nhìn ngang rồi bấm Đặt mốc 0°.';
+    status = !validHeight ? 'Nhập cao máy. Bạn có thể nhập 0 để dùng vị trí máy làm mốc cao độ.' :
+      pointSimulation ? 'Đưa thanh ngẩng/cúi về 0° rồi bấm Đặt mốc 0°.' :
+      station ? 'Trở về đúng vị trí và hướng ngang đã dùng, rồi đặt lại mốc 0°.' :
+      alignAim + ' Chĩa theo hướng mốc rồi bấm Đặt mốc 0°.';
   } else if (full) status = 'Không gian đã đạt giới hạn ' + fmt(pointLimit, 0) + ' điểm.';
   else status = pointSimulation ? 'Kéo thanh xoay và ngẩng/cúi, rồi bấm Giữ hướng.' : usingTop ?
     'Nâng hoặc hạ đầu iPhone theo tia laser rồi bấm Giữ hướng.' :
@@ -639,6 +660,7 @@ function renderPointPanel() {
 }
 
 function resetPointAim() {
+  pendingPointZero = false;
   pointReference = undefined;
   heldPointRay = undefined;
   pointDistance.value = '';
@@ -685,14 +707,16 @@ pointAxis.onchange = () => {
   resetPointAim();
   renderPointPanel();
 };
-for (const control of [pointHeight, pointDistance, $('point-yaw'), $('point-pitch')]) control.oninput = renderPointPanel;
-
-$('point-zero').onclick = () => {
-  if ($('point-zero').disabled) return;
-  const { source, ray: [x, y] } = pointAim();
-  const horizontal = Math.hypot(x, y);
-  pointReference = { source, forward: [x / horizontal, y / horizontal], height: geometry.parseDistance(pointHeight.value) };
+for (const control of [pointDistance, $('point-yaw'), $('point-pitch')]) control.oninput = renderPointPanel;
+pointHeight.oninput = () => {
+  pendingPointZero = false;
   renderPointPanel();
+};
+
+pointZero.onclick = () => {
+  pendingPointZero = !pendingPointZero;
+  if (pendingPointZero && !pointAim()?.ray && !pointSensor.waiting) pointSensor.start();
+  else renderPointPanel();
 };
 
 $('point-hold').onclick = () => {
@@ -728,7 +752,7 @@ $('point-undo').onclick = () => {
 };
 
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden || pointPanel.hidden || pointSimulation) return;
+  if (!document.hidden || pointPanel.hidden || pointSimulation || pointSensor.requestingPermission) return;
   pointSensor.stop();
   if (!heldPointRay) resetPointAim();
   renderPointPanel();

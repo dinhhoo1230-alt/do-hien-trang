@@ -88,6 +88,7 @@ const SurveyOrientation = (() => {
       this.sample = undefined;
       this.status = '';
       this.waiting = false;
+      this.requestingPermission = false;
     }
 
     async start() {
@@ -98,6 +99,7 @@ const SurveyOrientation = (() => {
         if (!window.isSecureContext) throw new Error('Mở trang qua HTTPS trên điện thoại để bật cảm biến.');
         if (!orientation) throw new Error('Trình duyệt này không cung cấp cảm biến hướng.');
         if (typeof orientation.requestPermission === 'function') {
+          this.requestingPermission = true;
           this.waiting = true;
           this.status = 'Đang chờ bạn cấp quyền cảm biến…';
           this.onChange();
@@ -105,6 +107,7 @@ const SurveyOrientation = (() => {
             ? await orientation.requestPermission(true)
             : await orientation.requestPermission();
           if (session !== this.session) return;
+          this.requestingPermission = false;
           if (permission !== 'granted') throw new Error('Chưa có quyền cảm biến hướng.');
         }
         this.status = 'Đang chờ tín hiệu từ điện thoại…';
@@ -123,6 +126,7 @@ const SurveyOrientation = (() => {
       } catch (error) {
         if (session !== this.session) return;
         this.waiting = false;
+        this.requestingPermission = false;
         this.status = error instanceof Error ? error.message : 'Không bật được cảm biến hướng.';
       }
       this.onChange();
